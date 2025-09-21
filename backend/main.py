@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import OAuth2PasswordRequestForm
 from models import UserRegister
-from database import users_collection, chats_collection
+from database import users_collection, chats_collection, status_collection
 from auth import hash_password, verify_password, create_access_token, get_current_user_id
 from datetime import timedelta
 import json
@@ -11,6 +11,8 @@ from openai import OpenAI
 import os
 from bson import ObjectId
 from fastapi.security import HTTPBearer
+import re
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="[도래] 은빛지기 API")
 security = HTTPBearer(auto_error=True)
@@ -76,19 +78,19 @@ async def get_chat_history(user_id: str = Depends(get_current_user_id)):
 
     return {"conversation": record.get("conversation", [])}
 
-@app.post("/api/chat")
+@app.post("/api/chat", dependencies=[Depends(security)])
 async def chat(req: ChatRequest, user_id: str = Depends(get_current_user_id)):
     user_input = req.user_input
 
     # DB에서 이전 대화 기록을 가져옵니다.
     conversation_history = await get_conversation_history(user_id)
 
-    # 1️⃣ 감정 분석 (기존 코드와 동일)
+    # 1️⃣ 감정 분석 
     sentiment_result = sentiment_pipe(user_input)[0]
     sentiment_label = sentiment_result["label"]
     sentiment_score = sentiment_result["score"]
 
-    # 2️⃣ LLM 프롬프트 설계 (기존 코드와 동일)
+    # 2️⃣ LLM 프롬프트 설계 
     user_message = f"""
 사용자가 이렇게 말했습니다: "{user_input}"
 감정 분석 결과: {sentiment_label} ({sentiment_score:.2f})
@@ -98,7 +100,6 @@ JSON 형태로 결과를 출력해주세요:
 """
     conversation_history.append({"role": "user", "content": user_message})
 
-    # 3️⃣ LLM 호출 (기존 코드와 동일)
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -106,26 +107,57 @@ JSON 형태로 결과를 출력해주세요:
         )
         result_text = response.choices[0].message.content
         try:
-            result_json = json.loads(result_text)
+            match = re.search(r"\{.*\}", result_text, re.DOTALL)
+            if match:
+                result_json = json.loads(match.group(0))
         except:
             result_json = {"depression_score": None, "response": result_text}
     except Exception as e:
         result_json = {"depression_score": None, "response": f"AI 호출 중 오류 발생: {str(e)}"}
 
+    depression_score = result_json.get("depression_score")
+
     # 4️⃣ 대화 기록에 AI 응답 추가
     conversation_history.append({"role": "assistant", "content": result_json["response"]})
 
-    # ⭐ 이 부분에서 DB에 채팅 기록을 저장 (업데이트 또는 생성) 합니다.
-    await chats_collection.update_one(
+    # 채팅 기록 저장
+    chats_collection.update_one(
         {"user_id": ObjectId(user_id)},  # 어떤 사용자의 문서를 찾을지 필터링
         {"$set": {"conversation": conversation_history}},  # 어떤 내용을 업데이트할지 설정
         upsert=True  # 문서가 없으면 새로 생성
     )
+    
 
-    # 5️⃣ API Response
+    status_data = {
+        "sentiment_label": sentiment_label,
+        "sentiment_score": sentiment_score,
+        "depression_score": depression_score
+    }
+
+
+    status_collection.update_one(
+        {"user_id": ObjectId(user_id)},
+        {"$set": status_data},
+        upsert=True
+    )
+
+    # 유저 상태 업데이트
+
     return {
         "sentiment_label": sentiment_label,
         "sentiment_score": sentiment_score,
         "depression_score": result_json["depression_score"],
         "ai_response": result_json["response"]
     }
+
+
+
+
+# CORS 설정
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  
+    allow_credentials=True,
+    allow_methods=["*"],  
+    allow_headers=["*"], 
+)
