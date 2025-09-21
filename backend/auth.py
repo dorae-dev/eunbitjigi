@@ -65,3 +65,20 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
 
     return user
+
+def create_refresh_token(data: dict, expires_delta: timedelta = timedelta(days=14)):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + expires_delta
+    to_encode.update({"exp": expire, "type": "refresh"})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def verify_token(token: str, token_type: str = "access"):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != token_type:
+            return None
+        return payload
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None

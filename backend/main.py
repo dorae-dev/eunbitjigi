@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import OAuth2PasswordRequestForm
 from models import UserRegister
 from database import users_collection, chats_collection, status_collection
-from auth import hash_password, verify_password, create_access_token, get_current_user_id, get_current_user
+from auth import hash_password, verify_password, create_access_token, get_current_user_id, get_current_user, create_refresh_token, verify_token
 from datetime import timedelta
 import json
 from pydantic import BaseModel
@@ -62,17 +62,20 @@ def register(user: UserRegister):
 @app.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = users_collection.find_one({"name": form_data.username})
-    if not user:
+    if not user or not verify_password(form_data.password, user["password"]):
         raise HTTPException(status_code=400, detail="잘못된 이름 또는 비밀번호")
+
+    access_token = create_access_token(data={"sub": str(user["_id"])}, expires_delta=timedelta(minutes=60))
+    refresh_token = create_refresh_token(data={"sub": str(user["_id"])})
     
-    if not verify_password(form_data.password, user["password"]):
-        raise HTTPException(status_code=400, detail="잘못된 이름 또는 비밀번호")
+    # DB에 refresh token 저장 (보안 위해)
+    users_collection.update_one({"_id": user["_id"]}, {"$set": {"refresh_token": refresh_token}})
     
-    access_token_expires = timedelta(minutes=60)
-    access_token = create_access_token(
-        data={"sub": str(user["_id"])} 
-    )
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
 
 @app.get('/api/userinfo')
 def userinfo(current_user: dict = Depends(get_current_user)):
@@ -177,6 +180,19 @@ async def userstatus(user_id: str = Depends(get_current_user_id)):
         status = {"sentiment_label": None, "sentiment_score": None, "disease": None}
     return status
 
+@app.post("/refresh")
+def refresh_token(refresh_token: str):
+    payload = verify_token(refresh_token, "refresh")
+    if not payload:
+        raise HTTPException(status_code=401, detail="유효하지 않은 토큰")
+
+    user_id = payload.get("sub")
+    user = users_collection.find_one({"_id": ObjectId(user_id)})
+    if not user or user.get("refresh_token") != refresh_token:
+        raise HTTPException(status_code=401, detail="유효하지 않은 토큰")
+
+    new_access_token = create_access_token(data={"sub": user_id}, expires_delta=timedelta(minutes=60))
+    return {"access_token": new_access_token, "token_type": "bearer"}
 
 # CORS 설정
 app.add_middleware(
