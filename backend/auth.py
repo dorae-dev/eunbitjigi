@@ -3,7 +3,10 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 import os
 from dotenv import load_dotenv
-from fastapi import Header,HTTPException
+from fastapi import Header,HTTPException,Depends
+from database import users_collection, chats_collection, status_collection
+from fastapi.security import OAuth2PasswordBearer
+from bson import ObjectId
 
 load_dotenv()
 
@@ -12,6 +15,8 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
@@ -45,3 +50,18 @@ def get_current_user_id(authorization: str = Header(..., alias="Authorization"))
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Token invalid")
 
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="토큰이 유효하지 않습니다.")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="토큰이 유효하지 않습니다.")
+
+    # DB 조회
+    user = users_collection.find_one({"_id": ObjectId(user_id)})
+    if user is None:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+
+    return user
