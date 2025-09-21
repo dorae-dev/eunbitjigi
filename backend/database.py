@@ -11,3 +11,4 @@ client = MongoClient(MONGO_URL)
 db = client["DB"]
 users_collection = db["users"]
 chats_collection = db["user_chats"]
+status_collection = db["user_status"]
