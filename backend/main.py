@@ -188,8 +188,8 @@ def refresh_token(req: RefreshRequest):
 
     user_id = payload.get("sub")
     user = users_collection.find_one({"_id": ObjectId(user_id)})
-    if not user or user.get("refresh_token") != refresh_token:
-        raise HTTPException(status_code=401, detail="유효하지 않은 토큰")
+    if not user or user.get("refresh_token") != req.refresh_token:
+        raise HTTPException(status_code=401, detail=user.get("refresh_token"))
 
     new_access_token = create_access_token(data={"sub": user_id}, expires_delta=timedelta(minutes=60))
     return {"access_token": new_access_token, "token_type": "bearer"}
