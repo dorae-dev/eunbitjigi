@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import OAuth2PasswordRequestForm
 from models import UserRegister
 from database import users_collection, chats_collection, status_collection
-from auth import hash_password, verify_password, create_access_token, get_current_user_id
+from auth import hash_password, verify_password, create_access_token, get_current_user_id, get_current_user
 from datetime import timedelta
 import json
 from pydantic import BaseModel
@@ -13,6 +13,7 @@ from bson import ObjectId
 from fastapi.security import HTTPBearer
 import re
 from fastapi.middleware.cors import CORSMiddleware
+from datetime import datetime
 
 app = FastAPI(title="[도래] 은빛지기 API")
 security = HTTPBearer(auto_error=True)
@@ -47,9 +48,13 @@ def register(user: UserRegister):
         raise HTTPException(status_code=400, detail="이미 존재하는 이메일입니다.")
     
     hashed_pw = hash_password(user.password)
+    birth_datetime = datetime.combine(user.birth, datetime.min.time())
     users_collection.insert_one({
         "name": user.name,
-        "password": hashed_pw
+        "password": hashed_pw,
+        "address": user.address,
+        "gender": user.gender,
+        "birth": birth_datetime,
     })
     return {"msg": "회원가입 성공"}
 
@@ -67,6 +72,15 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
         data={"sub": str(user["_id"])} 
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
+@app.get('/api/userinfo')
+def userinfo(current_user: dict = Depends(get_current_user)):
+    return {
+        "name": current_user["name"],
+        "address": current_user["address"],
+        "gender": current_user["gender"],
+        "birth": current_user["birth"],
+    }
 
 @app.get("/api/chat/history", dependencies=[Depends(security)]) 
 async def get_chat_history(user_id: str = Depends(get_current_user_id)):
