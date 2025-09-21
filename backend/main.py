@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import OAuth2PasswordRequestForm
-from models import UserRegister
+from models import UserRegister, RefreshRequest
 from database import users_collection, chats_collection, status_collection
 from auth import hash_password, verify_password, create_access_token, get_current_user_id, get_current_user, create_refresh_token, verify_token
 from datetime import timedelta
@@ -181,8 +181,8 @@ async def userstatus(user_id: str = Depends(get_current_user_id)):
     return status
 
 @app.post("/refresh")
-def refresh_token(refresh_token: str):
-    payload = verify_token(refresh_token, "refresh")
+def refresh_token(req: RefreshRequest):
+    payload = verify_token(req.refresh_token, "refresh")
     if not payload:
         raise HTTPException(status_code=401, detail="유효하지 않은 토큰")
 
