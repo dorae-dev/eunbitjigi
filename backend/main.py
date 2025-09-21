@@ -34,10 +34,10 @@ async def get_conversation_history(user_id):
     record = chats_collection.find_one({"user_id": ObjectId(user_id)})
     if record:
         return record.get("conversation", [
-            {"role": "system", "content": "너는 노인분들의 친근한 상담사야..."}
+            {"role": "system", "content": "너는 노인분들의 친근한 상담사야. 건강과 우울도에 대해 판단하고 상담해줄거야."}
         ])
     else:
-        return [{"role": "system", "content": "너는 노인분들의 친근한 상담사야..."}]
+        return [{"role": "system", "content": "너는 노인분들의 친근한 상담사야. 건강과 우울도에 대해 판단하고 상담해줄거야."}]
 
 
 
@@ -108,11 +108,11 @@ async def chat(req: ChatRequest, user_id: str = Depends(get_current_user_id)):
     user_message = f"""
 사용자가 이렇게 말했습니다: "{user_input}"
 감정 분석 결과: {sentiment_label} ({sentiment_score:.2f})
-이전 대화를 고려하여 우울도를 0~10으로 점수화하고 공감하는 답변을 만들어 주세요.
+이전 대화를 고려하여 우울도를 0~10으로 점수화하고 공감하는 답변을 만들어 주세요. 그리고 사용자의 대화중 건강과 관련된 이상이 있으면 예측질병을 작성하세요.
 JSON 형태로 결과를 출력해주세요:
-{{"depression_score": 7, "response": "위로 멘트"}}
+{{"depression_score": 7, "response": "위로 멘트", "disease" : 복통}}
 """
-    conversation_history.append({"role": "user", "content": user_message})
+    conversation_history.append({"role": "user", "content": user_input})
 
     try:
         response = client.chat.completions.create(
@@ -130,6 +130,7 @@ JSON 형태로 결과를 출력해주세요:
         result_json = {"depression_score": None, "response": f"AI 호출 중 오류 발생: {str(e)}"}
 
     depression_score = result_json.get("depression_score")
+    disease = result_json.get("disease")
 
     # 4️⃣ 대화 기록에 AI 응답 추가
     conversation_history.append({"role": "assistant", "content": result_json["response"]})
@@ -145,7 +146,8 @@ JSON 형태로 결과를 출력해주세요:
     status_data = {
         "sentiment_label": sentiment_label,
         "sentiment_score": sentiment_score,
-        "depression_score": depression_score
+        "depression_score": depression_score,
+        "disease" : disease
     }
 
 
@@ -161,10 +163,17 @@ JSON 형태로 결과를 출력해주세요:
         "sentiment_label": sentiment_label,
         "sentiment_score": sentiment_score,
         "depression_score": result_json["depression_score"],
+        "disease" : disease,
         "ai_response": result_json["response"]
     }
 
-
+@app.get("/api/userstatus", dependencies=[Depends(security)])
+async def userstatus(user_id: str = Depends(get_current_user_id)):
+    status = status_collection.find_one({"user_id": ObjectId(user_id)}, 
+                                        {"_id": 0, "sentiment_label": 1, "sentiment_score": 1, "disease": 1})
+    if not status:
+        status = {"sentiment_label": None, "sentiment_score": None, "disease": None}
+    return status
 
 
 # CORS 설정
