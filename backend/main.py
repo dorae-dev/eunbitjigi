@@ -14,6 +14,7 @@ from fastapi.security import HTTPBearer
 import re
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
+import copy
 
 app = FastAPI(title="[도래] 은빛지기 API")
 security = HTTPBearer(auto_error=True)
@@ -112,12 +113,13 @@ async def chat(req: ChatRequest, user_id: str = Depends(get_current_user_id)):
 JSON 형태로 결과를 출력해주세요:
 {{"depression_score": 7, "response": "위로 멘트", "disease" : 복통}}
 """
+    prompt = copy.deepcopy(conversation_history)
+    prompt.append({"role": "user", "content": user_message})
     conversation_history.append({"role": "user", "content": user_input})
-
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=conversation_history
+            messages=prompt
         )
         result_text = response.choices[0].message.content
         try:
@@ -170,7 +172,7 @@ JSON 형태로 결과를 출력해주세요:
 @app.get("/api/userstatus", dependencies=[Depends(security)])
 async def userstatus(user_id: str = Depends(get_current_user_id)):
     status = status_collection.find_one({"user_id": ObjectId(user_id)}, 
-                                        {"_id": 0, "sentiment_label": 1, "sentiment_score": 1, "disease": 1})
+                                        {"_id": 0, "sentiment_label": 1, "sentiment_score": 1, "depression_score": 1, "disease": 1})
     if not status:
         status = {"sentiment_label": None, "sentiment_score": None, "disease": None}
     return status
