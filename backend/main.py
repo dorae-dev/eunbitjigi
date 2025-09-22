@@ -76,6 +76,7 @@ def register(user: AdminRegister):
 
 @app.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    """이름/비밀번호 로그인"""
     user = users_collection.find_one({"name": form_data.username})
     if not user or not verify_password(form_data.password, user["password"]):
         raise HTTPException(status_code=400, detail="잘못된 이름 또는 비밀번호")
@@ -94,6 +95,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
 @app.post("/admin/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    """(관리자)ID/비밀번호 로그인"""
     user = admin_collection.find_one({"id": form_data.username})
     print(user)
     if not user or not verify_password(form_data.password, user["password"]):
@@ -113,6 +115,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
 @app.get('/api/userinfo')
 def userinfo(current_user: dict = Depends(get_current_user)):
+    """로그인한 사용자 정보 조회 [이름,주소,성별,생년월일,핸드폰번호]"""
     return {
         "name": current_user["name"],
         "address": current_user["address"],
@@ -123,6 +126,7 @@ def userinfo(current_user: dict = Depends(get_current_user)):
 
 @app.get('/api/admininfo')
 def userinfo(current_user: dict = Depends(get_current_admin)):
+    """(관리자)로그인한 사용자 정보 조회 [이름]"""
     return {
         "name": current_user["name"],
     }
@@ -139,6 +143,7 @@ async def get_chat_history(user_id: str = Depends(get_current_user_id)):
 
 @app.post("/api/chat", dependencies=[Depends(security)])
 async def chat(req: ChatRequest, user_id: str = Depends(get_current_user_id)):
+    """채팅 시스템"""
     user_input = req.user_input
 
     # DB에서 이전 대화 기록을 가져옵니다.
@@ -223,6 +228,7 @@ JSON 형태로 결과를 출력해주세요:
 #로그인한 유저가 직접 조회 (토큰활용)
 @app.get("/api/userstatus", dependencies=[Depends(security)])
 async def userstatus(user_id: str = Depends(get_current_user_id)):
+    """로그인한 유저의 상태정보 조회"""
     status = status_collection.find_one({"user_id": ObjectId(user_id)}, 
                                         {"_id": 0, "sentiment_label": 1, "sentiment_score": 1, "depression_score": 1, "disease": 1})
     if not status:
@@ -231,6 +237,7 @@ async def userstatus(user_id: str = Depends(get_current_user_id)):
 
 @app.get("/api/allstatus")
 def allstatus(type: str):
+    """전체 사용자의 상태정보 조회 (타입별 분류 / high / middle / none / all)"""
     status = list(status_collection.find({}, {"_id": 0}))
     for s in status:
         res = users_collection.find_one({'_id': s["user_id"]},{'_id': 0,"name": 1})
@@ -251,13 +258,15 @@ def allstatus(type: str):
 # ID를 활용한 유저 정보 상세조회
 @app.get("/api/userdetail")
 def userdetail(_id: str):
-    user_info = users_collection.find_one({'_id': ObjectId(_id)},{'_id':0, 'refresh_token':0})
+    """ID를 쿼리로 사용자의 전체 정보(기본정보, 상태정보) 조회"""
+    user_info = users_collection.find_one({'_id': ObjectId(_id)},{'_id':0, 'refresh_token':0,'password': 0})
     user_status = status_collection.find_one({'user_id': ObjectId(_id)},{'_id':0,'user_id':0})
     return user_info | user_status
     
 
 @app.post("/refresh")
 def refresh_token(req: RefreshRequest):
+    """리프래시 토큰을 이용한 엑세스 토큰 재설정"""
     payload = verify_token(req.refresh_token, "refresh")
     if not payload:
         raise HTTPException(status_code=401, detail="유효하지 않은 토큰")
@@ -272,6 +281,7 @@ def refresh_token(req: RefreshRequest):
 
 @app.post("/admin/refresh")
 def refresh_token(req: RefreshRequest):
+    """(관리자)리프래시 토큰을 이용한 엑세스 토큰 재설정"""
     payload = verify_token(req.refresh_token, "refresh")
     if not payload:
         raise HTTPException(status_code=401, detail="유효하지 않은 토큰")
@@ -287,6 +297,7 @@ def refresh_token(req: RefreshRequest):
 
 @app.get("/api/nearby")
 def nearby(address: str):
+    """주소활용 근처 소방서/병원 검색"""
     res = nearby_find(address)
     if not res :
         return {}
