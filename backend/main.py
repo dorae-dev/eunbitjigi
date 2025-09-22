@@ -220,6 +220,7 @@ JSON 형태로 결과를 출력해주세요:
         "ai_response": result_json["response"]
     }
 
+#로그인한 유저가 직접 조회 (토큰활용)
 @app.get("/api/userstatus", dependencies=[Depends(security)])
 async def userstatus(user_id: str = Depends(get_current_user_id)):
     status = status_collection.find_one({"user_id": ObjectId(user_id)}, 
@@ -246,6 +247,14 @@ def allstatus(type: str):
         filtered_list = [s for s in status if s.get("type") == "none"]
         return filtered_list
     return status
+
+# ID를 활용한 유저 정보 상세조회
+@app.get("/api/userdetail")
+def userdetail(_id: str):
+    user_info = users_collection.find_one({'_id': ObjectId(_id)},{'_id':0, 'refresh_token':0})
+    user_status = status_collection.find_one({'user_id': ObjectId(_id)},{'_id':0,'user_id':0})
+    return user_info | user_status
+    
 
 @app.post("/refresh")
 def refresh_token(req: RefreshRequest):
