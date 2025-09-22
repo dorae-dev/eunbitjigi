@@ -1,7 +1,7 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends,WebSocket, WebSocketDisconnect
 from fastapi.security import OAuth2PasswordRequestForm
 from models import UserRegister,AdminRegister, RefreshRequest
-from database import users_collection, chats_collection, status_collection, admin_collection
+from database import users_collection, chats_collection, status_collection, admin_collection, alert_collection
 from auth import hash_password, verify_password, create_access_token, get_current_user_id, get_current_user, create_refresh_token, verify_token, get_current_admin
 from datetime import timedelta
 from nearby_find.find import nearby_find
@@ -16,6 +16,10 @@ import re
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 import copy
+from contextlib import asynccontextmanager
+import asyncio
+
+
 
 app = FastAPI(title="[도래] 은빛지기 API")
 security = HTTPBearer(auto_error=True)
@@ -41,9 +45,87 @@ async def get_conversation_history(user_id):
     else:
         return [{"role": "system", "content": "너는 노인분들의 친근한 상담사야. 건강과 우울도에 대해 판단하고 상담해줄거야."}]
 
+# ==== WEB SOCKET ====
+import asyncio
+from fastapi import FastAPI, WebSocket
+from pymongo import MongoClient
+
+connections = []
+@app.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    await ws.accept()
+    connections.append(ws)
+    try:
+        while True:
+            await asyncio.sleep(1)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        connections.remove(ws)
+
+
+# pymongo ChangeStream를 비동기 반복으로 감싸는 헬퍼
+async def async_iter(stream):
+    loop = asyncio.get_running_loop()
+    while True:
+        change = await loop.run_in_executor(None, stream.try_next)
+        if change:
+            yield change
+        else:
+            await asyncio.sleep(0.1)  # CPU 낭비 방지
+
+# ChangeStream 감시
+from datetime import datetime
+
+async def watch_changes():
+    pipeline = [
+    {
+        "$match": {
+            "$or": [
+                {"operationType": "insert"},  # 새 문서 insert 시 fullDocument 포함
+                {
+                    "operationType": "update",
+                    "updateDescription.updatedFields.type": {"$exists": True}  # type 필드 변경 시
+                }
+            ]
+        }
+    }
+    ]
+    with status_collection.watch(pipeline=pipeline) as stream:
+        async for change in async_iter(stream):
+            doc_id = change['documentKey']['_id']
+            dockey = status_collection.find_one({"_id": doc_id},{"_id": 0})
+            user_info = users_collection.find_one({"_id": dockey['user_id']},{"_id": 0, "password": 0, "refresh_token": 0})
+            res = dockey | user_info
+            data = {
+                "operationType": change["operationType"],
+                "time": datetime.now(),
+                "updatedFields": change.get("updateDescription", {}).get("updatedFields"),
+                "data" : res,
+                "isread" : False
+            }
+            # DB에 기록
+            alert_collection.insert_one(data)
+            
+            # WebSocket으로 전송
+            for ws in connections[:]:  # 리스트 복사본으로 안전하게 순회
+                try:
+                    await ws.send_json(data)
+                except:
+                    connections.remove(ws)
+
+# FastAPI 시작 시 watch_changes를 백그라운드에서 실행
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(watch_changes())
 
 
 # ===== API =====
+@app.get("/ws/isread")
+def isread(id: str):
+    res = alert_collection.update_one({'_id': ObjectId(id)},{"$set" : {"isread": True}})
+    return "success"
+
 @app.post("/register")
 def register(user: UserRegister):
     if users_collection.find_one({"name": user.name}):
@@ -302,6 +384,7 @@ def nearby(address: str):
     if not res :
         return {}
     return res
+
 
 # CORS 설정
 app.add_middleware(
