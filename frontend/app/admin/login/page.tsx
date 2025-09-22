@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { login } from "@/lib/auth";
+import { adminLogin } from "@/lib/auth";
 import { Heart, ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -31,9 +31,8 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      console.log("test");
-      await login(formData.name, formData.password, rememberMe);
-      router.push("/dashboard");
+      await adminLogin(formData.name, formData.password, rememberMe);
+      router.push("/admin/dashboard");
     } catch (err: any) {
       setError("로그인 실패. 아이디/비밀번호를 확인하세요.");
     }
@@ -76,12 +75,12 @@ export default function LoginPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="name" className="text-[#2A2A2A]">
-                  이름
+                  ID
                 </Label>
                 <Input
                   id="name"
                   type="text"
-                  placeholder="이름을 입력하세요"
+                  placeholder="관리자 ID를 입력하세요"
                   value={formData.name}
                   onChange={(e) => handleInputChange("name", e.target.value)}
                   className="h-12 border-[#DDDDDD] focus:border-[#B87C4C]"
@@ -134,18 +133,6 @@ export default function LoginPage() {
                 로그인
               </Button>
             </form>
-
-            <div className="mt-6 text-center">
-              <p className="text-sm text-[#555555]">
-                계정이 없으신가요?{" "}
-                <button
-                  onClick={() => router.push("/signup")}
-                  className="text-[#B87C4C] hover:underline font-medium"
-                >
-                  회원가입
-                </button>
-              </p>
-            </div>
           </CardContent>
         </Card>
       </div>

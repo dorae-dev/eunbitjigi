@@ -52,6 +52,14 @@ export function setTokens(
   other?.removeItem("refresh_token");
 }
 
+export function setAccessToken(t: string | null) {
+  accessMem = t;
+  if (typeof window !== "undefined") {
+    if (t) localStorage.setItem("access_token", t);
+    else localStorage.removeItem("access_token");
+  }
+}
+
 export function getAccessToken() {
   if (accessMem) return accessMem;
   return (
@@ -59,6 +67,14 @@ export function getAccessToken() {
     stores.session?.getItem("access_token") ||
     null
   );
+}
+
+export function setRefreshToken(t: string | null) {
+  refreshMem = t;
+  if (typeof window !== "undefined") {
+    if (t) localStorage.setItem("refresh_token", t);
+    else localStorage.removeItem("refresh_token");
+  }
 }
 
 export function getRefreshToken() {

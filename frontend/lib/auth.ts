@@ -23,6 +23,27 @@ export async function login(
   return data;
 }
 
+export async function adminLogin(
+  username: string,
+  password: string,
+  rememberMe: boolean
+) {
+  const { data } = await api.post(
+    "/admin/login",
+    qs.stringify({
+      username,
+      password,
+      grant_type: "password",
+    }),
+    { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+  );
+  setTokens(
+    { access: data.access_token, refresh: data.refresh_token },
+    { remember: rememberMe }
+  );
+  return data;
+}
+
 export async function logout() {
   clearTokens();
 }

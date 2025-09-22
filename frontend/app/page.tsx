@@ -16,7 +16,7 @@ export default function LoginPage() {
   };
 
   const handleAdminLogin = () => {
-    router.push("/admin/dashboard");
+    router.push("/admin/login");
   };
 
   return (
