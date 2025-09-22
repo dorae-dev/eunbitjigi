@@ -242,7 +242,6 @@ def refresh_token(req: RefreshRequest):
 
     user_id = payload.get("sub")
     user = admin_collection.find_one({"_id": ObjectId(user_id)})
-    print(user)
     if not user or user.get("refresh_token") != req.refresh_token:
         raise HTTPException(status_code=401, detail=user.get("refresh_token"))
 
