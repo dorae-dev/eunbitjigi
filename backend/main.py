@@ -1,8 +1,8 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import OAuth2PasswordRequestForm
-from models import UserRegister, RefreshRequest
-from database import users_collection, chats_collection, status_collection
-from auth import hash_password, verify_password, create_access_token, get_current_user_id, get_current_user, create_refresh_token, verify_token
+from models import UserRegister,AdminRegister, RefreshRequest
+from database import users_collection, chats_collection, status_collection, admin_collection
+from auth import hash_password, verify_password, create_access_token, get_current_user_id, get_current_user, create_refresh_token, verify_token, get_current_admin
 from datetime import timedelta
 from nearby_find.find import nearby_find
 import json
@@ -60,6 +60,19 @@ def register(user: UserRegister):
     })
     return {"msg": "회원가입 성공"}
 
+@app.post("/admin/register")
+def register(user: AdminRegister):
+    if admin_collection.find_one({"id": user.id}):
+        raise HTTPException(status_code=400, detail="이미 존재하는 이메일입니다.")
+    
+    hashed_pw = hash_password(user.password)
+    admin_collection.insert_one({
+        "id": user.id,
+        "name": user.name,
+        "password": hashed_pw,
+    })
+    return {"msg": "회원가입 성공"}
+
 @app.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = users_collection.find_one({"name": form_data.username})
@@ -78,6 +91,25 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
         "token_type": "bearer"
     }
 
+@app.post("/admin/login")
+def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = admin_collection.find_one({"id": form_data.username})
+    print(user)
+    if not user or not verify_password(form_data.password, user["password"]):
+        raise HTTPException(status_code=400, detail="잘못된 이름 또는 비밀번호")
+
+    access_token = create_access_token(data={"sub": str(user["_id"])}, expires_delta=timedelta(minutes=60))
+    refresh_token = create_refresh_token(data={"sub": str(user["_id"])})
+    
+    # DB에 refresh token 저장 (보안 위해)
+    admin_collection.update_one({"_id": user["_id"]}, {"$set": {"refresh_token": refresh_token}})
+    
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
+
 @app.get('/api/userinfo')
 def userinfo(current_user: dict = Depends(get_current_user)):
     return {
@@ -85,6 +117,12 @@ def userinfo(current_user: dict = Depends(get_current_user)):
         "address": current_user["address"],
         "gender": current_user["gender"],
         "birth": current_user["birth"],
+    }
+
+@app.get('/api/admininfo')
+def userinfo(current_user: dict = Depends(get_current_admin)):
+    return {
+        "name": current_user["name"],
     }
 
 @app.get("/api/chat/history", dependencies=[Depends(security)]) 
@@ -181,6 +219,7 @@ async def userstatus(user_id: str = Depends(get_current_user_id)):
         status = {"sentiment_label": None, "sentiment_score": None, "disease": None}
     return status
 
+
 @app.post("/refresh")
 def refresh_token(req: RefreshRequest):
     payload = verify_token(req.refresh_token, "refresh")
@@ -194,6 +233,21 @@ def refresh_token(req: RefreshRequest):
 
     new_access_token = create_access_token(data={"sub": user_id}, expires_delta=timedelta(minutes=60))
     return {"access_token": new_access_token, "token_type": "bearer"}
+
+@app.post("/admin/refresh")
+def refresh_token(req: RefreshRequest):
+    payload = verify_token(req.refresh_token, "refresh")
+    if not payload:
+        raise HTTPException(status_code=401, detail="유효하지 않은 토큰")
+
+    user_id = payload.get("sub")
+    user = admin_collection.find_one({"_id": ObjectId(user_id)})
+    if not user or user.get("refresh_token") != req.refresh_token:
+        raise HTTPException(status_code=401, detail=user.get("refresh_token"))
+
+    new_access_token = create_access_token(data={"sub": user_id}, expires_delta=timedelta(minutes=60))
+    return {"access_token": new_access_token, "token_type": "bearer"}
+
 
 @app.get("/api/nearby")
 def nearby(address: str):

@@ -15,3 +15,13 @@ class UserLogin(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+class AdminRegister(BaseModel):
+    name: str
+    id: str
+    password: str
+
+class AdminLogin(BaseModel):
+    id: str
+    password: str
+
