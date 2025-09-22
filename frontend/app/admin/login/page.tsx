@@ -31,6 +31,7 @@ export default function LoginPage() {
     setError(null);
 
     try {
+      console.log("test");
       await login(formData.name, formData.password, rememberMe);
       router.push("/dashboard");
     } catch (err: any) {
@@ -41,10 +42,6 @@ export default function LoginPage() {
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
-
-  useEffect(() => {
-    console.log(rememberMe);
-  }, [rememberMe]);
 
   return (
     <div className="min-h-screen bg-[#F7F4EA] flex flex-col items-center justify-center p-4">
@@ -68,9 +65,11 @@ export default function LoginPage() {
 
         <Card className="shadow-[0px_4px_12px_rgba(0,0,0,0.1)] bg-white border-0">
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl text-[#2A2A2A]">로그인</CardTitle>
+            <CardTitle className="text-2xl text-[#2A2A2A]">
+              관리자 로그인
+            </CardTitle>
             <CardDescription className="text-[#555555]">
-              계정에 로그인하여 서비스를 이용하세요
+              관리자 계정 로그인 폼입니다.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -117,6 +116,7 @@ export default function LoginPage() {
                   />
                   로그인 상태 유지
                 </label>
+
                 <button
                   type="button"
                   className="text-[#B87C4C] hover:underline"

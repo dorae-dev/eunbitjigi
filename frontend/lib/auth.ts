@@ -1,8 +1,12 @@
 import { api } from "./api";
-import { setAccessToken, setRefreshToken, clearTokens } from "./token-store";
+import { setTokens, clearTokens } from "./token-store";
 import qs from "qs";
 
-export async function login(username: string, password: string) {
+export async function login(
+  username: string,
+  password: string,
+  rememberMe: boolean
+) {
   const { data } = await api.post(
     "/login",
     qs.stringify({
@@ -12,16 +16,14 @@ export async function login(username: string, password: string) {
     }),
     { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
   );
-  setAccessToken(data.access_token);
-  setRefreshToken(data.refresh_token);
+  setTokens(
+    { access: data.access_token, refresh: data.refresh_token },
+    { remember: rememberMe }
+  );
   return data;
 }
 
 export async function logout() {
-  // logout 엔드포인트 생기면 추가할 것
-  //   try {
-  //     await api.post("/logout");
-  //   } catch {}
   clearTokens();
 }
 

@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono";
 import { Analytics } from "@vercel/analytics/next";
 import { Suspense } from "react";
 import "./globals.css";
+import AuthBootstrap from "./providers/AuthBootstrap";
 
 export const metadata: Metadata = {
   title: "은빛지기 - AI 기반 노인 정서 건강 케어",
@@ -21,7 +22,7 @@ export default function RootLayout({
       <body
         className={`font-sans ${GeistSans.variable} ${GeistMono.variable} antialiased`}
       >
-        <Suspense fallback={null}>{children}</Suspense>
+        <AuthBootstrap>{children}</AuthBootstrap>
         <Analytics />
       </body>
     </html>
