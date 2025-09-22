@@ -4,7 +4,7 @@ from passlib.context import CryptContext
 import os
 from dotenv import load_dotenv
 from fastapi import Header,HTTPException,Depends
-from database import users_collection, chats_collection, status_collection
+from database import users_collection, admin_collection, status_collection
 from fastapi.security import OAuth2PasswordBearer
 from bson import ObjectId
 
@@ -17,6 +17,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+oauth2_admin_scheme = OAuth2PasswordBearer(tokenUrl="admin/login")
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
@@ -31,10 +32,6 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 def get_current_user_id(authorization: str = Header(..., alias="Authorization")):
-    """
-    Authorization 헤더에서 Bearer 토큰을 읽고 _id를 반환
-    """
-    
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization header")
     
@@ -65,6 +62,23 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
 
     return user
+
+def get_current_admin(token: str = Depends(oauth2_admin_scheme)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="토큰이 유효하지 않습니다.")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="토큰이 유효하지 않습니다.")
+
+    # DB 조회
+    user = admin_collection.find_one({"_id": ObjectId(user_id)})
+    if user is None:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+
+    return user
+
 
 def create_refresh_token(data: dict, expires_delta: timedelta = timedelta(days=14)):
     to_encode = data.copy()
