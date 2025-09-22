@@ -134,7 +134,7 @@ async def startup_event():
 
 
 # ===== API =====
-@app.get("/ws/isread")
+@app.post("/ws/isread")
 def isread(id: str):
     res = alert_collection.update_one({'_id': ObjectId(id)},{"$set" : {"isread": True}})
     return "success"
