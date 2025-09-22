@@ -196,6 +196,13 @@ JSON 형태로 결과를 출력해주세요:
         "disease" : disease
     }
 
+    if status_data["depression_score"] >= 8 or status_data["sentiment_score"] >= 0.8:
+        status_data["type"] = "high"
+    elif ((6 <= status_data["depression_score"] <= 7) and (0.6 <= status_data["sentiment_score"] < 0.8)) or (status_data["disease"] not in [None, "", []]):
+        status_data["type"] = "middle"
+    else:
+        status_data["type"] = "none"
+
 
     status_collection.update_one(
         {"user_id": ObjectId(user_id)},
@@ -221,6 +228,24 @@ async def userstatus(user_id: str = Depends(get_current_user_id)):
         status = {"sentiment_label": None, "sentiment_score": None, "disease": None}
     return status
 
+@app.get("/api/allstatus")
+def allstatus(type: str):
+    status = list(status_collection.find({}, {"_id": 0}))
+    for s in status:
+        res = users_collection.find_one({'_id': s["user_id"]},{'_id': 0,"name": 1})
+        s["user_id"] = str(s["user_id"])
+        s["name"] = res['name']
+    
+    if type == 'high':
+        filtered_list = [s for s in status if s.get("type") == "high"]
+        return filtered_list
+    elif type == 'middle':
+        filtered_list = [s for s in status if s.get("type") == "middle"]
+        return filtered_list
+    elif type == 'none' :
+        filtered_list = [s for s in status if s.get("type") == "none"]
+        return filtered_list
+    return status
 
 @app.post("/refresh")
 def refresh_token(req: RefreshRequest):
