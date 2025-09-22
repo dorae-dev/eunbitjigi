@@ -45,6 +45,18 @@ async def get_conversation_history(user_id):
     else:
         return [{"role": "system", "content": "너는 노인분들의 친근한 상담사야. 건강과 우울도에 대해 판단하고 상담해줄거야."}]
 
+def convert_to_str(obj):
+    if isinstance(obj, dict):
+        return {k: convert_to_str(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_str(i) for i in obj]
+    elif isinstance(obj, ObjectId):
+        return str(obj)
+    elif isinstance(obj, datetime):
+        return obj.isoformat()  # "2025-09-22T21:57:52.275129" 형태
+    else:
+        return obj
+
 # ==== WEB SOCKET ====
 import asyncio
 from fastapi import FastAPI, WebSocket
@@ -106,11 +118,12 @@ async def watch_changes():
             }
             # DB에 기록
             alert_collection.insert_one(data)
-            
+            clean_data = convert_to_str(data)
+
             # WebSocket으로 전송
             for ws in connections[:]:  # 리스트 복사본으로 안전하게 순회
                 try:
-                    await ws.send_json(data)
+                    await ws.send_json(clean_data)
                 except:
                     connections.remove(ws)
 
