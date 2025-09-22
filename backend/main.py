@@ -4,6 +4,7 @@ from models import UserRegister, RefreshRequest
 from database import users_collection, chats_collection, status_collection
 from auth import hash_password, verify_password, create_access_token, get_current_user_id, get_current_user, create_refresh_token, verify_token
 from datetime import timedelta
+from nearby_find.find import nearby_find
 import json
 from pydantic import BaseModel
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
@@ -193,6 +194,13 @@ def refresh_token(req: RefreshRequest):
 
     new_access_token = create_access_token(data={"sub": user_id}, expires_delta=timedelta(minutes=60))
     return {"access_token": new_access_token, "token_type": "bearer"}
+
+@app.get("/api/nearby")
+def nearby(address: str):
+    res = nearby_find(address)
+    if not res :
+        return {}
+    return res
 
 # CORS 설정
 app.add_middleware(
