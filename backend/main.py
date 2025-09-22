@@ -54,6 +54,7 @@ def register(user: UserRegister):
     users_collection.insert_one({
         "name": user.name,
         "password": hashed_pw,
+        "phone" : user.phonenumber,
         "address": user.address,
         "gender": user.gender,
         "birth": birth_datetime,
@@ -117,6 +118,7 @@ def userinfo(current_user: dict = Depends(get_current_user)):
         "address": current_user["address"],
         "gender": current_user["gender"],
         "birth": current_user["birth"],
+        "phone": current_user["phone"]
     }
 
 @app.get('/api/admininfo')

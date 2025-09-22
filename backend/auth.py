@@ -16,9 +16,15 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-oauth2_admin_scheme = OAuth2PasswordBearer(tokenUrl="admin/login")
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="login",
+    scheme_name="UserOAuth2"
+)
 
+oauth2_admin_scheme = OAuth2PasswordBearer(
+    tokenUrl="admin/login",
+    scheme_name="AdminOAuth2"
+)
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
