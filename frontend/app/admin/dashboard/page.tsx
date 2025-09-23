@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Heart,
@@ -29,131 +29,234 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { api } from "@/lib/api";
+import { logout } from "@/lib/auth";
+import { useSafeWebSocket } from "@/hooks/useSafeWebSocket";
+
+/* -------------------- 유틸 -------------------- */
 
 // 위험도 색상
 const getSeverityColor = (type: string) => {
   switch (type) {
-    case "critical":
-      return "bg-[#E74C3C] text-white";
     case "high":
       return "bg-[#E67E22] text-white";
-    case "medium":
+    case "middle":
       return "bg-[#F1C40F] text-[#2A2A2A]";
     default:
       return "bg-[#4CAF50] text-white";
   }
 };
 
-// API 응답 타입
+// 레이블 한국어
+const levelLabel = (lvl: "high" | "middle" | "none") =>
+  lvl === "high" ? "고위험" : lvl === "middle" ? "중위험" : "정상";
+
+// 브라우저 Notification API (옵션)
+function maybeNotify(title: string, body: string) {
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission === "granted") {
+    new Notification(title, { body });
+  } else if (Notification.permission !== "denied") {
+    Notification.requestPermission().then((p) => {
+      if (p === "granted") new Notification(title, { body });
+    });
+  }
+}
+
+/* -------------------- 타입 -------------------- */
+
+// API 응답 타입 (대시보드 리스트)
 type StatusItem = {
   user_id: string;
-  depression_score: number; // 우울도(정수)
-  sentiment_label: string; // 감정 상태 라벨 (예: 걱정스러운(불안한))
-  sentiment_score: number; // 0~1 실수 → 0~100점으로 변환 표시
-  disease: string; // 질병
-  type: "critical" | "high" | "medium" | "low" | string;
+  depression_score: number;
+  sentiment_label: string;
+  sentiment_score: number; // 0~1
+  disease: string;
+  type: "high" | "middle" | "none" | string;
   name: string;
-  time?: string; // (옵션) 표시용 최근 갱신 시간
+  last_updated?: string;
 };
+
+// WebSocket 알림 아이템
+type AlertItem = {
+  id: string;
+  user_id: string;
+  name: string;
+  level: "high" | "middle" | "none";
+  depression_score: number;
+  sentiment_score: number;
+  sentiment_label: string;
+  disease: string;
+  occurred_at: string;
+  read?: boolean; // 클라 표시용
+};
+
+/* -------------------- 헬퍼 -------------------- */
+
+function normalizeFromServer(msg: any): AlertItem {
+  const d = msg?.data ?? msg;
+  const id = String(msg?._id);
+  return {
+    id,
+    user_id: String(d?.user_id ?? ""),
+    name: String(d?.name ?? "이름 미상"),
+    level: d?.type,
+    depression_score: Number(d?.depression_score ?? 0),
+    sentiment_score: Number(d?.sentiment_score ?? 0),
+    sentiment_label: String(d?.sentiment_label ?? "-"),
+    disease: String(d?.disease ?? "-"),
+    occurred_at: String(
+      msg?.time ?? d?.occurred_at ?? new Date().toISOString()
+    ),
+    read: false,
+  };
+}
+
+function mergeSortUnique(incoming: AlertItem[], prev: AlertItem[]) {
+  const map = new Map<string, AlertItem>();
+  for (const p of prev) map.set(p.id, p);
+  for (const n of incoming) map.set(n.id, n);
+  const arr = Array.from(map.values());
+  arr.sort((a, b) => +new Date(b.occurred_at) - +new Date(a.occurred_at));
+  return arr.slice(0, 300); // 상한
+}
+
+function formatDate(isoString: string): string {
+  try {
+    const d = new Date(isoString);
+
+    const year = d.getFullYear();
+    const month = d.getMonth() + 1;
+    const day = d.getDate();
+
+    let hours = d.getHours();
+    const minutes = d.getMinutes().toString().padStart(2, "0");
+    const seconds = d.getSeconds().toString().padStart(2, "0");
+
+    const ampm = hours < 12 ? "오전" : "오후";
+    const hour12 = hours % 12 || 12; // 0시는 12시로 표시
+
+    return `${year}. ${month}. ${day}. ${ampm} ${hour12}:${minutes}:${seconds}`;
+  } catch {
+    return isoString; // 변환 실패 시 원본 반환
+  }
+}
 
 export default function AdminDashboard() {
   const router = useRouter();
 
-  // 알림 팝업(목업) -------------------------
+  /* -------------------- 알림 상태 -------------------- */
   const [notifOpen, setNotifOpen] = useState(false);
-  const [notifications, setNotifications] = useState<
-    {
-      id: number;
-      title: string;
-      detail: string;
-      level: "critical" | "high" | "medium";
-      time: string;
-    }[]
-  >([
-    {
-      id: 101,
-      title: "고위험 감지",
-      detail: "오준식(??) 우울도 8, 즉시 확인 필요",
-      level: "critical",
-      time: "10분 전",
-    },
-    {
-      id: 102,
-      title: "응급 알림",
-      detail: "고위험 지표 증가 대상 1건",
-      level: "high",
-      time: "35분 전",
-    },
-    {
-      id: 103,
-      title: "주의 알림",
-      detail: "중위험 지표 변화 대상 2건",
-      level: "medium",
-      time: "1시간 전",
-    },
-  ]);
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const unreadCount = alerts.filter((a) => !a.read).length;
 
-  // 대시보드 데이터 -------------------------
+  // 고위험 모달
+  const [highNow, setHighNow] = useState<AlertItem | null>(null);
+
+  // 개별 알림 읽음 처리
+  const markAlertRead = async (id: string) => {
+    try {
+      await api.post(`/ws/isread?id=${encodeURIComponent(id)}`);
+      setAlerts((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, read: true } : a))
+      );
+    } catch (e) {
+      console.error("읽음 처리 실패:", id, e);
+    }
+  };
+
+  // 모두 읽음 처리
+  const markAllRead = async () => {
+    try {
+      const unread = alerts.filter((a) => !a.read);
+      await Promise.all(
+        unread.map((a) =>
+          api.post(`/ws/isread?id=${encodeURIComponent(a.id)}`).catch((e) => {
+            console.error("읽음 처리 실패:", a.id, e);
+          })
+        )
+      );
+      setAlerts((prev) => prev.map((a) => ({ ...a, read: true })));
+    } catch (e) {
+      console.error("모두 읽음 처리 실패", e);
+    }
+  };
+
+  /* -------------------- 웹소켓 연결 -------------------- */
+  const WS_URL = process.env.NEXT_PUBLIC_ALERTS_WS_URL || "";
+
+  if (WS_URL) {
+    useSafeWebSocket(WS_URL, {
+      onOpen: (ws) => {
+        console.log("WS open:", WS_URL);
+        // 서버: isread=false만 보내도록 동기화 요청
+        ws.send("call_not_read");
+      },
+      onMessage: (ev) => {
+        try {
+          const payload = JSON.parse(ev.data);
+
+          // 서버가 배열로 여러 건을 한 번에 보낼 때
+          if (Array.isArray(payload)) {
+            const items = payload.map(normalizeFromServer);
+
+            setAlerts((prev) => mergeSortUnique(items, prev));
+
+            return;
+          }
+
+          // 일반 단건
+          const item = normalizeFromServer(payload);
+          setAlerts((prev) => mergeSortUnique([item], prev));
+
+          // 고위험 즉시 처리
+          if (item.level === "high") {
+            setHighNow(item);
+            if (document.hidden) {
+              const body = `우울도:${item.depression_score} 감정:${Math.round(
+                item.sentiment_score * 100
+              )}점 ${item.sentiment_label} / ${item.disease}`;
+              maybeNotify(`고위험 - ${item.name}`, body);
+            }
+          }
+        } catch (e) {
+          console.error("WS parse error", e);
+        }
+      },
+      onError: (ev) => console.error("WS error", ev),
+      onClose: (ev) => console.log("WS close:", ev.code, ev.reason),
+    });
+  }
+
+  /* -------------------- allstatus 불러오기 -------------------- */
   const [list, setList] = useState<StatusItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // API 연동: /api/allstatus (동일 출처 프록시 가정)
     const fetchAll = async () => {
       try {
-        const res = await fetch("/api/allstatus", { cache: "no-store" });
-        if (!res.ok) throw new Error("allstatus fetch failed");
-        const data: StatusItem[] = await res.json();
+        const res = await api.get("/api/allstatus?type=all");
+        if (res.status !== 200) throw new Error("allstatus fetch failed");
+        const data: StatusItem[] = res.data;
+
         setList(
           data.map((d) => ({
             ...d,
-            time: d.time ?? "방금 전",
+            type: d.type,
+            last_updated: d.last_updated ?? "방금 전",
           }))
         );
-      } catch {
-        // --- 목업 대체 ---
-        setList([
-          {
-            user_id: "68cfe324c0034f6d28791d47",
-            depression_score: 7,
-            sentiment_label: "걱정스러운(불안한)",
-            sentiment_score: 0.626, // → 63점
-            disease: "복통",
-            type: "high",
-            name: "오준식",
-            time: "24분 전",
-          },
-          {
-            user_id: "u-2",
-            depression_score: 9,
-            sentiment_label: "불안한",
-            sentiment_score: 0.81,
-            disease: "고혈압",
-            type: "critical",
-            name: "김영희",
-            time: "44분 전",
-          },
-          {
-            user_id: "u-3",
-            depression_score: 5,
-            sentiment_label: "다소 우울",
-            sentiment_score: 0.52,
-            disease: "소화불량",
-            type: "medium",
-            name: "정만수",
-            time: "1시간 전",
-          },
-          {
-            user_id: "u-4",
-            depression_score: 3,
-            sentiment_label: "안정적",
-            sentiment_score: 0.22,
-            disease: "없음",
-            type: "low",
-            name: "이순자",
-            time: "3시간 전",
-          },
-        ]);
+      } catch (e) {
+        console.error(e);
+        setList([]);
       } finally {
         setLoading(false);
       }
@@ -161,29 +264,29 @@ export default function AdminDashboard() {
     fetchAll();
   }, []);
 
-  // 통계 집계 (요청 UI의 4개 카드)
+  // 통계
   const total = list.length;
-  const critical = list.filter(
-    (x) => x.type === "critical" || x.type === "high"
-  ).length;
-  const warning = list.filter((x) => x.type === "medium").length;
+  const critical = list.filter((x) => x.type === "high").length;
+  const warning = list.filter((x) => x.type === "middle").length;
   const safe = Math.max(0, total - (critical + warning));
-
   const stats = { total, critical, warning, safe };
 
-  const handleLogout = () => router.push("/");
+  const handleLogout = () => {
+    logout();
+    router.push("/");
+  };
 
-  // 위험도 그룹화
+  // 그룹화
   const highGroup = useMemo(
-    () => list.filter((x) => x.type === "critical" || x.type === "high"),
+    () => list.filter((x) => x.type === "high"),
     [list]
   );
   const midGroup = useMemo(
-    () => list.filter((x) => x.type === "medium"),
+    () => list.filter((x) => x.type === "middle"),
     [list]
   );
 
-  // 공통 템플릿 텍스트
+  // 단일 템플릿 텍스트
   const renderUnifiedDesc = (item: StatusItem) => {
     const score100 = Math.round(item.sentiment_score * 100);
     return `우울도 : ${item.depression_score}  감정점수 : ${score100}점  감정상태 : ${item.sentiment_label}  질병 : ${item.disease}`;
@@ -212,10 +315,11 @@ export default function AdminDashboard() {
                 size="sm"
                 className="text-white hover:bg-white/20"
                 onClick={() => setNotifOpen(true)}
+                title="알림"
               >
                 <Bell className="w-4 h-4" />
                 <Badge className="ml-2 bg-[#E74C3C] text-white text-xs">
-                  {notifications.length}
+                  {unreadCount}
                 </Badge>
               </Button>
               <Button
@@ -231,39 +335,96 @@ export default function AdminDashboard() {
         </div>
       </header>
 
-      {/* 알림 팝업(목업) */}
+      {/* 알림 팝업 */}
       <Dialog open={notifOpen} onOpenChange={setNotifOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>알림</DialogTitle>
             <DialogDescription>
-              대시보드 미접속 시 수신된 위험 알림입니다. (목업, 추후 API 연동)
+              실시간 및 누락 알림 목록입니다.
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh] pr-2">
             <div className="space-y-3">
-              {notifications.map((n) => (
+              {alerts.map((n) => (
                 <div key={n.id} className="p-3 bg-[#F7F4EA] rounded-lg">
                   <div className="flex items-center justify-between mb-1">
-                    <p className="font-medium text-[#2A2A2A]">{n.title}</p>
+                    <p className="font-medium text-[#2A2A2A]">
+                      {n.name}
+                      {!n.read && (
+                        <span className="ml-2 text-xs text-[#E74C3C]">●</span>
+                      )}
+                    </p>
                     <Badge className={getSeverityColor(n.level)}>
-                      {n.level}
+                      {levelLabel(n.level)}
                     </Badge>
                   </div>
-                  <p className="text-sm text-[#555]">{n.detail}</p>
-                  <p className="text-xs text-[#999] mt-1">{n.time}</p>
+                  <p className="text-sm text-[#555]">
+                    우울도:{n.depression_score} 감정점수:
+                    {Math.round(n.sentiment_score * 100)}점 감정상태:
+                    {n.sentiment_label} 질병:{n.disease}
+                  </p>
+                  <div className="flex items-center justify-between mt-1">
+                    <p className="text-xs text-[#999]">
+                      {new Date(n.occurred_at).toLocaleString()}
+                    </p>
+                    {!n.read && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => markAlertRead(n.id)}
+                      >
+                        읽음 처리
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))}
+              {alerts.length === 0 && (
+                <p className="text-sm text-[#777]">알림이 없습니다.</p>
+              )}
             </div>
           </ScrollArea>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setNotifications([])}>
-              모두 비우기
+            <Button
+              variant="outline"
+              onClick={markAllRead}
+              disabled={unreadCount === 0}
+            >
+              모두 읽음
             </Button>
             <Button onClick={() => setNotifOpen(false)}>닫기</Button>
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* 고위험 즉시 경고 모달 */}
+      <AlertDialog
+        open={!!highNow}
+        onOpenChange={(o) => !o && setHighNow(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-[#E74C3C]">
+              고위험 알림
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {highNow
+                ? `${highNow.name} | 우울도:${
+                    highNow.depression_score
+                  } 감정:${Math.round(highNow.sentiment_score * 100)}점 ${
+                    highNow.sentiment_label
+                  } / ${highNow.disease}`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex justify-end">
+            <AlertDialogAction onClick={() => setHighNow(null)}>
+              확인
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* 본문 */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -339,7 +500,7 @@ export default function AdminDashboard() {
 
               {/* 위험도별 현황 */}
               <TabsContent value="risk" className="mt-6 space-y-6">
-                {/* 고위험군(critical/high) */}
+                {/* 고위험군(high) */}
                 <Card className="bg-white border-0">
                   <CardHeader className="pb-3">
                     <CardTitle className="text-[#E74C3C]">
@@ -362,13 +523,15 @@ export default function AdminDashboard() {
                               {r.name}
                             </p>
                             <Badge className={getSeverityColor(r.type)}>
-                              {r.type}
+                              {levelLabel(r.type as any)}
                             </Badge>
                           </div>
                           <p className="text-sm text-[#555] mt-1">
                             {renderUnifiedDesc(r)}
                           </p>
-                          <p className="text-xs text-[#999] mt-1">{r.time}</p>
+                          <p className="text-xs text-[#999] mt-1">
+                            {formatDate(r.last_updated ?? "방금 전")}
+                          </p>
                         </div>
                       ))}
                   </CardContent>
@@ -397,20 +560,22 @@ export default function AdminDashboard() {
                               {r.name}
                             </p>
                             <Badge className={getSeverityColor(r.type)}>
-                              {r.type}
+                              {levelLabel(r.type as any)}
                             </Badge>
                           </div>
                           <p className="text-sm text-[#555] mt-1">
                             {renderUnifiedDesc(r)}
                           </p>
-                          <p className="text-xs text-[#999] mt-1">{r.time}</p>
+                          <p className="text-xs text-[#999] mt-1">
+                            {formatDate(r.last_updated ?? "방금 전")}
+                          </p>
                         </div>
                       ))}
                   </CardContent>
                 </Card>
               </TabsContent>
 
-              {/* 탭: 최근 활동(간단 목업) */}
+              {/* 탭: 최근 활동(목업) */}
               <TabsContent value="activity" className="mt-6">
                 <Card className="bg-white border-0">
                   <CardHeader>
