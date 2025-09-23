@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Heart,
@@ -40,6 +40,8 @@ import {
 import { api } from "@/lib/api";
 import { logout } from "@/lib/auth";
 import { useSafeWebSocket } from "@/hooks/useSafeWebSocket";
+import UserListModal from "@/components/admin/UserListModal";
+import { calcAge } from "@/lib/utils";
 
 /* -------------------- 유틸 -------------------- */
 
@@ -80,6 +82,7 @@ type StatusItem = {
   sentiment_label: string;
   sentiment_score: number; // 0~1
   disease: string;
+  birth: string;
   type: "high" | "middle" | "none" | string;
   name: string;
   last_updated?: string;
@@ -161,6 +164,9 @@ export default function AdminDashboard() {
   // 고위험 모달
   const [highNow, setHighNow] = useState<AlertItem | null>(null);
 
+  // 유저 리스트 모달 오픈 여부
+  const [userListOpen, setUserListOpen] = useState(false);
+
   // 개별 알림 읽음 처리
   const markAlertRead = async (id: string) => {
     try {
@@ -192,49 +198,46 @@ export default function AdminDashboard() {
 
   /* -------------------- 웹소켓 연결 -------------------- */
   const WS_URL = process.env.NEXT_PUBLIC_ALERTS_WS_URL || "";
+  useSafeWebSocket(WS_URL, {
+    onOpen: (ws) => {
+      console.log("WS open:", WS_URL);
+      // 서버: isread=false만 보내도록 동기화 요청
+      ws.send("call_not_read");
+    },
+    onMessage: (ev) => {
+      try {
+        const payload = JSON.parse(ev.data);
 
-  if (WS_URL) {
-    useSafeWebSocket(WS_URL, {
-      onOpen: (ws) => {
-        console.log("WS open:", WS_URL);
-        // 서버: isread=false만 보내도록 동기화 요청
-        ws.send("call_not_read");
-      },
-      onMessage: (ev) => {
-        try {
-          const payload = JSON.parse(ev.data);
+        // 서버가 배열로 여러 건을 한 번에 보낼 때
+        if (Array.isArray(payload)) {
+          const items = payload.map(normalizeFromServer);
 
-          // 서버가 배열로 여러 건을 한 번에 보낼 때
-          if (Array.isArray(payload)) {
-            const items = payload.map(normalizeFromServer);
+          setAlerts((prev) => mergeSortUnique(items, prev));
 
-            setAlerts((prev) => mergeSortUnique(items, prev));
-
-            return;
-          }
-
-          // 일반 단건
-          const item = normalizeFromServer(payload);
-          setAlerts((prev) => mergeSortUnique([item], prev));
-
-          // 고위험 즉시 처리
-          if (item.level === "high") {
-            setHighNow(item);
-            if (document.hidden) {
-              const body = `우울도:${item.depression_score} 감정:${Math.round(
-                item.sentiment_score * 100
-              )}점 ${item.sentiment_label} / ${item.disease}`;
-              maybeNotify(`고위험 - ${item.name}`, body);
-            }
-          }
-        } catch (e) {
-          console.error("WS parse error", e);
+          return;
         }
-      },
-      onError: (ev) => console.error("WS error", ev),
-      onClose: (ev) => console.log("WS close:", ev.code, ev.reason),
-    });
-  }
+
+        // 일반 단건
+        const item = normalizeFromServer(payload);
+        setAlerts((prev) => mergeSortUnique([item], prev));
+
+        // 고위험 즉시 처리
+        if (item.level === "high") {
+          setHighNow(item);
+          if (document.hidden) {
+            const body = `우울도:${item.depression_score} 감정:${Math.round(
+              item.sentiment_score * 100
+            )}점 ${item.sentiment_label} / ${item.disease}`;
+            maybeNotify(`고위험 - ${item.name}`, body);
+          }
+        }
+      } catch (e) {
+        console.error("WS parse error", e);
+      }
+    },
+    onError: (ev) => console.error("WS error", ev),
+    onClose: (ev) => console.log("WS close:", ev.code, ev.reason),
+  });
 
   /* -------------------- allstatus 불러오기 -------------------- */
   const [list, setList] = useState<StatusItem[]>([]);
@@ -263,6 +266,20 @@ export default function AdminDashboard() {
     };
     fetchAll();
   }, []);
+
+  // 모달용 전체 목록(간단 변환)
+  type RiskLevel = "high" | "middle" | "none";
+
+  const allRows = useMemo(
+    () =>
+      list.map((l) => ({
+        user_id: l.user_id,
+        name: l.name,
+        age: calcAge(l.birth ?? ""),
+        risk: l.type as RiskLevel,
+      })),
+    [list]
+  );
 
   // 통계
   const total = list.length;
@@ -430,7 +447,10 @@ export default function AdminDashboard() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* 상단 4카드 */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card className="bg-white border-0">
+          <Card
+            className="bg-white border-0 cursor-pointer"
+            onClick={() => setUserListOpen(true)}
+          >
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -532,6 +552,17 @@ export default function AdminDashboard() {
                           <p className="text-xs text-[#999] mt-1">
                             {formatDate(r.last_updated ?? "방금 전")}
                           </p>
+                          <div className="flex items-center gap-3 mt-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                router.push(`/admin/user/${r.user_id}`)
+                              }
+                            >
+                              상세 보기
+                            </Button>
+                          </div>
                         </div>
                       ))}
                   </CardContent>
@@ -569,6 +600,17 @@ export default function AdminDashboard() {
                           <p className="text-xs text-[#999] mt-1">
                             {formatDate(r.last_updated ?? "방금 전")}
                           </p>
+                          <div className="flex items-center gap-3 mt-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                router.push(`/admin/user/${r.user_id}`)
+                              }
+                            >
+                              상세 보기
+                            </Button>
+                          </div>
                         </div>
                       ))}
                   </CardContent>
@@ -652,6 +694,12 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
+
+      <UserListModal
+        open={userListOpen}
+        onOpenChange={setUserListOpen}
+        data={allRows}
+      />
     </div>
   );
 }
