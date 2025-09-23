@@ -43,6 +43,7 @@ export default function UserDashboard() {
   const [currentMood, setCurrentMood] = useState("좋음");
   const [userName, setUserName] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   const handleStartChat = () => {
@@ -52,6 +53,23 @@ export default function UserDashboard() {
   const handleLogout = () => {
     logout();
     router.push("/");
+  };
+
+  const handleEmergency = async () => {
+    try {
+      setLoading(true);
+      // API 호출 (심각도 high 등록)
+      await api.post("/api/emergency");
+
+      // 성공하면 전화 앱 열기
+      window.location.href = "tel:119";
+    } catch (err) {
+      console.error("응급 신고 API 실패", err);
+      // 실패해도 전화 앱은 열리도록
+      window.location.href = "tel:119";
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -179,9 +197,12 @@ export default function UserDashboard() {
                               <AlertDialogCancel>취소</AlertDialogCancel>
                               {/* 확인 시 전화앱으로 이동 */}
                               <AlertDialogAction asChild>
-                                <a href="tel:119" aria-label="119로 전화 연결">
-                                  전화 걸기
-                                </a>
+                                <Button
+                                  onClick={handleEmergency}
+                                  disabled={loading}
+                                >
+                                  {loading ? "처리 중..." : "전화 걸기"}
+                                </Button>
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
