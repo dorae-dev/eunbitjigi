@@ -312,7 +312,7 @@ JSON 형태로 결과를 출력해주세요:
         "last_updated" : datetime.now()
     }
 
-    if status_data["depression_score"] >= 8 or status_data["sentiment_score"] >= 0.8:
+    if status_data["depression_score"] >= 8 and status_data["sentiment_score"] >= 0.8:
         status_data["type"] = "high"
     elif ((6 <= status_data["depression_score"] <= 7) and (0.6 <= status_data["sentiment_score"] < 0.8)) or (status_data["disease"] not in [None, "", []]):
         status_data["type"] = "middle"
@@ -416,6 +416,10 @@ def nearby(address: str):
         return {}
     return res
 
+@app.post("/api/emergency")
+def emergency(_id: str):
+    res = status_collection.update_one({"user_id" : ObjectId(_id)},{"$set" : {"type": 'high'}})
+    return "success"
 
 # CORS 설정
 app.add_middleware(
