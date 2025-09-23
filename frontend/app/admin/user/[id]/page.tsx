@@ -130,9 +130,6 @@ export default function UserDetailPage() {
             </Button>
             <h1 className="text-xl font-bold text-[#2A2A2A]">개인 상세 정보</h1>
           </div>
-          <Button className="bg-[#B87C4C] hover:bg-[#a06d43] text-white">
-            편집
-          </Button>
         </div>
 
         {/* 상단 프로필 */}
