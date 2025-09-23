@@ -351,10 +351,14 @@ def allstatus(type: str):
     """전체 사용자의 상태정보 조회 (타입별 분류 / high / middle / none / all)"""
     status = list(status_collection.find({}, {"_id": 0}))
     for s in status:
-        res = users_collection.find_one({'_id': s["user_id"]},{'_id': 0,"name": 1,"birth":1})
+        res = users_collection.find_one({'_id': ObjectId(s["user_id"])},{'_id': 0,"name": 1,"birth":1})
         s["user_id"] = str(s["user_id"])
-        s["name"] = res['name']
-        s["birth"] = res['birth']
+        if res:
+            s["name"] = res.get("name", "unknown")
+            s["birth"] = res.get("birth", None)
+        else:
+            s["name"] = "unknown"
+            s["birth"] = None
 
     
     if type == 'high':
