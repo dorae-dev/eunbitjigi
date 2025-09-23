@@ -265,7 +265,7 @@ export default function AdminDashboard() {
       }
     };
     fetchAll();
-  }, []);
+  }, [list]);
 
   // 모달용 전체 목록(간단 변환)
   type RiskLevel = "high" | "middle" | "none";
@@ -301,6 +301,37 @@ export default function AdminDashboard() {
   const midGroup = useMemo(
     () => list.filter((x) => x.type === "middle"),
     [list]
+  );
+
+  // 안전군 그룹/비율/라벨
+  const safeGroup = useMemo(
+    () => list.filter((x) => x.type !== "high" && x.type !== "middle"),
+    [list]
+  );
+
+  const safeRate = useMemo(
+    () => (total ? Math.round((safeGroup.length / total) * 100) : 0),
+    [safeGroup.length, total]
+  );
+
+  const latestUpdatedAt = useMemo(() => {
+    const ts = list
+      .map((x) => new Date(x.last_updated ?? 0).getTime())
+      .filter((n) => Number.isFinite(n) && n > 0);
+    return ts.length ? new Date(Math.max(...ts)) : null;
+  }, [list]);
+
+  // 안전군 전용 모달 (전체 리스트 모달과 별개)
+  const [safeListOpen, setSafeListOpen] = useState(false);
+  const safeRows = useMemo(
+    () =>
+      safeGroup.map((s) => ({
+        user_id: s.user_id,
+        name: s.name,
+        age: calcAge(s.birth ?? ""),
+        risk: "none" as RiskLevel,
+      })),
+    [safeGroup]
   );
 
   // 단일 템플릿 텍스트
@@ -680,15 +711,46 @@ export default function AdminDashboard() {
             <Card className="bg-white border-0">
               <CardHeader>
                 <CardTitle className="text-[#2A2A2A]">
-                  안전군 {stats.safe}
+                  안전군 {safeGroup.length} / {total}
                 </CardTitle>
                 <CardDescription className="text-[#555]">
-                  대부분의 대상자가 안정적 상태를 유지하고 있습니다.
+                  안전군 비율과 최근 갱신 정보를 확인하세요.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="grid place-items-center py-8">
-                <CheckCircle2 className="w-12 h-12 text-[#4CAF50]" />
-                <p className="text-sm text-[#777] mt-2">시스템 정상 작동</p>
+
+              <CardContent className="py-6">
+                {/* 진행 바 */}
+                <div>
+                  <div className="flex justify-between text-sm text-[#777] mb-1">
+                    <span>안전 비율</span>
+                    <span>{safeRate}%</span>
+                  </div>
+                  <div className="h-2 bg-[#F7F4EA] rounded">
+                    <div
+                      className="h-2 bg-[#4CAF50] rounded"
+                      style={{ width: `${safeRate}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* 최근 갱신 */}
+                <p className="text-xs text-[#999] mt-3">
+                  최근 갱신:{" "}
+                  {latestUpdatedAt
+                    ? latestUpdatedAt.toLocaleString()
+                    : "데이터 없음"}
+                </p>
+
+                {/* 버튼 */}
+                <div className="mt-4">
+                  <Button
+                    variant="outline"
+                    className="btn-secondary"
+                    onClick={() => setSafeListOpen(true)}
+                  >
+                    안전군 보기
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -699,6 +761,11 @@ export default function AdminDashboard() {
         open={userListOpen}
         onOpenChange={setUserListOpen}
         data={allRows}
+      />
+      <UserListModal
+        open={safeListOpen}
+        onOpenChange={setSafeListOpen}
+        data={safeRows}
       />
     </div>
   );
