@@ -69,6 +69,13 @@ async def websocket_endpoint(ws: WebSocket):
     connections.append(ws)
     try:
         while True:
+            msg = await ws.receive_text()
+            
+            if msg == 'call_not_read' :
+                res = alert_collection.find({'isread': False})
+                res_list = [convert_to_str(doc) for doc in res]
+                await ws.send_json(res_list)
+
             await asyncio.sleep(1)
     except WebSocketDisconnect:
         pass
@@ -128,10 +135,18 @@ async def watch_changes():
                     connections.remove(ws)
 
 # FastAPI 시작 시 watch_changes를 백그라운드에서 실행
+tasks = []
+
 @app.on_event("startup")
 async def startup_event():
-    asyncio.create_task(watch_changes())
+    t = asyncio.create_task(watch_changes())
+    tasks.append(t)
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    for t in tasks:
+        t.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 # ===== API =====
 @app.post("/ws/isread")
@@ -293,7 +308,8 @@ JSON 형태로 결과를 출력해주세요:
         "sentiment_label": sentiment_label,
         "sentiment_score": sentiment_score,
         "depression_score": depression_score,
-        "disease" : disease
+        "disease" : disease,
+        "last_updated" : datetime.now()
     }
 
     if status_data["depression_score"] >= 8 or status_data["sentiment_score"] >= 0.8:
