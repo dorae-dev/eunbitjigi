@@ -72,7 +72,7 @@ async def websocket_endpoint(ws: WebSocket):
             msg = await ws.receive_text()
             
             if msg == 'call_not_read' :
-                res = alert_collection.find({'isread': False},{'_id': 0})
+                res = alert_collection.find({'isread': False})
                 res_list = [convert_to_str(doc) for doc in res]
                 await ws.send_json(res_list)
 
