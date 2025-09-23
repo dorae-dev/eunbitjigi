@@ -308,7 +308,8 @@ JSON 형태로 결과를 출력해주세요:
         "sentiment_label": sentiment_label,
         "sentiment_score": sentiment_score,
         "depression_score": depression_score,
-        "disease" : disease
+        "disease" : disease,
+        "last_updated" : datetime.now()
     }
 
     if status_data["depression_score"] >= 8 or status_data["sentiment_score"] >= 0.8:
