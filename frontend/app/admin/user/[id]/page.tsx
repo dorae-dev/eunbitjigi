@@ -33,7 +33,7 @@ type UserDetail = {
   sentiment_label: string; // 감정 상태
   sentiment_score: number; // 0~1
   disease: string; // 질병/진단
-  risk: "high" | "middle" | "none";
+  type: "high" | "middle" | "none";
   diagnosed_at?: string; // 진단일 (옵션)
 };
 
@@ -83,6 +83,7 @@ export default function UserDetailPage() {
       const res = await api.get(`/api/userdetail?_id=${id}`).catch(() => null);
       if (res?.status === 200) {
         setData(res.data as UserDetail);
+        console.log(data);
         setLoading(false);
       }
     })();
@@ -100,7 +101,6 @@ export default function UserDetailPage() {
           `/api/nearby?address=${encodeURIComponent(data.address!)}`
         );
         if (!aborted && res?.status === 200) setNearby(res.data);
-        console.log(res);
       } catch (e) {
         console.error(e);
       }
@@ -143,10 +143,10 @@ export default function UserDetailPage() {
                 <p className="text-lg font-semibold text-[#2A2A2A]">
                   {data.name}
                 </p>
-                <Badge className={getSeverityColor(data.risk)}>
-                  {data.risk === "high"
+                <Badge className={getSeverityColor(data.type)}>
+                  {data.type === "high"
                     ? "고위험"
-                    : data.risk === "middle"
+                    : data.type === "middle"
                     ? "중위험"
                     : "정상"}
                 </Badge>
@@ -254,7 +254,7 @@ export default function UserDetailPage() {
               <CardDescription>지표 기반 자동 평가</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              {data.risk === "high" ? (
+              {data.type === "high" ? (
                 <>
                   <div className="p-3 rounded-lg bg-[#FDECEA] text-[#C0392B]">
                     고위험군 — 즉시 관리 필요
@@ -265,7 +265,7 @@ export default function UserDetailPage() {
                     <li>감정상태: 불안</li>
                   </ul>
                 </>
-              ) : data.risk === "middle" ? (
+              ) : data.type === "middle" ? (
                 <div className="p-3 rounded-lg bg-[#FFF5D6] text-[#B9770E]">
                   중위험 — 주의 관찰
                 </div>

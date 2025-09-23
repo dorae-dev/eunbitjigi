@@ -28,10 +28,21 @@ import {
 import { useRouter } from "next/navigation";
 import { logout } from "@/lib/auth";
 import { api } from "@/lib/api";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function UserDashboard() {
   const [currentMood, setCurrentMood] = useState("좋음");
   const [userName, setUserName] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   const router = useRouter();
 
   const handleStartChat = () => {
@@ -144,10 +155,37 @@ export default function UserDashboard() {
                           <MessageCircle className="w-6 h-6" />
                           AI 상담 시작하기
                         </Button>
-                        <Button className="h-16 bg-[#F7F4EA] text-[#B87C4C] border border-[#B87C4C] hover:bg-[#EBD9D1] flex-col gap-2">
-                          <Phone className="w-6 h-6" />
+                        <Button
+                          variant="outline"
+                          className="w-full btn-secondary justify-center"
+                          onClick={() => setOpen(true)}
+                        >
+                          <Phone className="w-4 h-4 mr-2" />
                           응급 상황 신고
                         </Button>
+
+                        <AlertDialog open={open} onOpenChange={setOpen}>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                119에 전화하시겠어요?
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                실제 통화 앱이 열립니다. 오동작을 방지하기 위해
+                                확인이 필요합니다.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>취소</AlertDialogCancel>
+                              {/* 확인 시 전화앱으로 이동 */}
+                              <AlertDialogAction asChild>
+                                <a href="tel:119" aria-label="119로 전화 연결">
+                                  전화 걸기
+                                </a>
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                     </CardContent>
                   </Card>
