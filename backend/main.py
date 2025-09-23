@@ -416,6 +416,10 @@ def nearby(address: str):
         return {}
     return res
 
+@app.post("/api/emergency")
+def emergency(_id: str):
+    res = status_collection.update_one({"user_id" : ObjectId(_id)},{"$set" : {"type": 'high'}})
+    return "success"
 
 # CORS 설정
 app.add_middleware(
